@@ -23,7 +23,7 @@ const int BOSS_SIZE = 60;
 //定义攻击类型枚举
 enum AttackType
 {
-
+	CIRCLE_ATTACK
 };
 
 //定义预警攻击阶段
