@@ -101,7 +101,7 @@ private:
 	int activeTime;
 
 public:
-	CircleAttack(float cx, float cy, float r, float dmg = 2.0f)
+	CircleAttack(float cx, float cy, float r, float dmg = 20.0f)
 		:Attack(cx, cy, r, dmg), warningTime(90), activeTime(30) {
 	}
 
