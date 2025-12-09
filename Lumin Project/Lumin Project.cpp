@@ -261,6 +261,8 @@ private:
 };
 
 
+
+
 //基类Boss
 class Boss
 {
@@ -269,11 +271,13 @@ protected:
 	float hp, maxHp;
 	std::string name;
 	int attackDelay;
+	bool damageCooldown;
+	int damageTimer;
 	std::vector<std::shared_ptr<Attack>> attacks;
 
 public:
 	Boss(float cx, float cy, float health, const std::string n)
-		:x(cx), y(cy), hp(health), maxHp(health), name(n), attackDelay(0) {
+		:x(cx), y(cy), hp(health), maxHp(health), name(n), attackDelay(0), damageCooldown(false), damageTimer(35) {
 	}
 	virtual ~Boss() {}
 
@@ -289,6 +293,8 @@ public:
 			attackDelay = getAttackDelay();
 		}
 
+
+
 		//以下小段涉及攻击生成部分正在研究
 		for (auto it = attacks.begin(); it != attacks.end();)
 		{
@@ -303,7 +309,20 @@ public:
 				++it;
 			}
 		}
+
+		if (damageCooldown)
+		{
+			damageTimer--;
+			if (damageTimer <= 0)
+			{
+				damageCooldown = false;
+				damageTimer = 35;
+			}
+		}
+
 	}
+
+
 
 	virtual void draw()
 	{
@@ -348,11 +367,16 @@ public:
 
 	void takeDamage(float damage)
 	{
-		hp -= damage;
-		if (hp < 0)
+		if (!damageCooldown)
 		{
-			hp = 0;
+			hp -= damage;
+			damageCooldown = true;
+			if (hp < 0)
+			{
+				hp = 0;
+			}
 		}
+
 	}
 
 	float getX() const
