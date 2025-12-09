@@ -71,8 +71,8 @@
   </ImportGroup>
   <PropertyGroup Label="UserMacros" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
-    <IncludePath>E:\Downloads\raylib-5.5_win64_msvc16\raylib-5.5_win64_msvc16\include;$(IncludePath)</IncludePath>
-    <LibraryPath>E:\Downloads\raylib-5.5_win64_msvc16\raylib-5.5_win64_msvc16\lib;$(LibraryPath)</LibraryPath>
+    <IncludePath>D:\raylib\include;$(IncludePath)</IncludePath>
+    <LibraryPath>D:\raylib\lib;$(LibraryPath)</LibraryPath>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <IncludePath>E:\Downloads\raylib-5.5_win64_msvc16\raylib-5.5_win64_msvc16\include;$(IncludePath)</IncludePath>

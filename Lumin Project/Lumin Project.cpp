@@ -126,7 +126,7 @@ public:
 		// WARNING: 显示黄色圆环（外圈）
 		if (phase == WARNING)
 		{
-			DrawCircleLines((int)x, (int)y, radius, YELLOW);
+			DrawCircleLines((int)x, (int)y, radius, BLACK);
 			DrawText("!", (int)x - 6, (int)y - 6, 20, YELLOW);
 		}
 		// ACTIVE: 红色填充圈
@@ -154,9 +154,110 @@ public:
 };
 
 //其他攻击类型
-class xxxxAttack :public Attack
+class BounceBulletAttack : public Attack
 {
+private:
+	float speed;           // 子弹速度
+	float directionX;      // X方向向量
+	float directionY;      // Y方向向量
+	int bounceCount;       // 当前反弹次数
+	int maxBounces;        // 最大反弹次数
+	float rotation;        // 旋转角度
+	float rotationSpeed;   // 旋转速度（每秒弧度）
 
+public:
+	BounceBulletAttack(float cx, float cy, float dirX, float dirY, float spd = 3.0f, int maxBounce = 3, float dmg = 5.0f)
+		: Attack(cx, cy, 8.0f, dmg),  // 子弹半径为8
+		directionX(dirX), directionY(dirY),
+		speed(spd), bounceCount(0), maxBounces(maxBounce),
+		rotation(0.0f), rotationSpeed(0.1f)  // 自转速度
+	{
+		phase = ACTIVE;  // 子弹没有预警阶段，直接激活
+	}
+
+	void update(float playerX, float playerY) override
+	{
+		Attack::update(playerX, playerY);
+
+		// 更新位置
+		x += directionX * speed;
+		y += directionY * speed;
+
+		// 更新旋转
+		rotation += rotationSpeed;
+		if (rotation > 2 * M_PI) rotation -= 2 * M_PI;
+
+		// 边界检测与反弹
+		checkWallCollision();
+
+		// 超过最大反弹次数或飞出屏幕过远则进入冷却（销毁）
+		if (bounceCount >= maxBounces || isOutOfBounds())
+		{
+			phase = COOLDOWN;
+		}
+	}
+
+	void draw() override
+	{
+		if (phase != ACTIVE) return;
+
+		// 绘制旋转的三角形子弹
+		Vector2 points[3];
+		float triSize = radius * 2;  // 三角形大小
+
+		// 计算旋转后的三角形顶点
+		points[0] = { x + cosf(rotation) * triSize, y + sinf(rotation) * triSize };
+		points[1] = { x + cosf(rotation + 2 * M_PI / 3) * triSize, y + sinf(rotation + 2 * M_PI / 3) * triSize };
+		points[2] = { x + cosf(rotation + 4 * M_PI / 3) * triSize, y + sinf(rotation + 4 * M_PI / 3) * triSize };
+
+		DrawTriangle(points[0], points[1], points[2], ORANGE);
+		DrawTriangleLines(points[0], points[1], points[2], ORANGE);
+	}
+
+	bool checkCollision(float playerX, float playerY, float playerSize) override
+	{
+		if (phase != ACTIVE) return false;
+		return distanceTo(playerX, playerY) < (radius + playerSize / 2.0f);
+	}
+
+private:
+	// 检测墙壁碰撞并反弹
+	void checkWallCollision()
+	{
+		// 左右边界反弹
+		if (x - radius < 0)
+		{
+			x = radius;  // 防止卡在墙内
+			directionX = -directionX;
+			bounceCount++;
+		}
+		else if (x + radius > SCREEN_WIDTH)
+		{
+			x = SCREEN_WIDTH - radius;
+			directionX = -directionX;
+			bounceCount++;
+		}
+
+		// 上下边界反弹
+		if (y - radius < 0)
+		{
+			y = radius;
+			directionY = -directionY;
+			bounceCount++;
+		}
+		else if (y + radius > SCREEN_HEIGHT)
+		{
+			y = SCREEN_HEIGHT - radius;
+			directionY = -directionY;
+			bounceCount++;
+		}
+	}
+
+	// 检测是否飞出屏幕过远（防止反弹后无限循环）
+	bool isOutOfBounds()
+	{
+		return x < -50 || x > SCREEN_WIDTH + 50 || y < -50 || y > SCREEN_HEIGHT + 50;
+	}
 };
 
 
@@ -276,31 +377,59 @@ public:
 
 };
 
-class Boss01 :public Boss
+class Boss01 : public Boss
 {
+private:
+	int attackPattern;  // 攻击模式切换
+
 public:
 	Boss01(float cx, float cy)
-		:Boss(cx, cy, 200.0f, "Boss01")
+		: Boss(cx, cy, 200.0f, "Boss01"), attackPattern(0)
 	{
-		// 初始延迟，避免立即连续攻击
 		attackDelay = getAttackDelay() / 2;
 	}
 
-	// 生成一个圆形预警攻击
+	// 改进攻击逻辑，交替使用两种攻击模式
 	virtual void doAttack(float playerX, float playerY) override
 	{
-		float r = 100.0f;
-		float dmg = 10.0f;
-		auto atk = std::make_shared<CircleAttack>(x, y, r, dmg);
-		attacks.push_back(atk);
+		if (attackPattern % 3 == 0)  // 每3次攻击使用1次反弹子弹
+		{
+			// 计算朝向玩家的方向
+			float dx = playerX - x;
+			float dy = playerY - y;
+			float dist = sqrtf(dx * dx + dy * dy);
+			if (dist > 0)
+			{
+				dx /= dist;  // 标准化方向向量
+				dy /= dist;
+			}
+
+			// 生成3个略微分散的反弹子弹
+			for (int i = -1; i <= 1; i++)
+			{
+				float angleOffset = i * 0.2f;  // 角度偏移
+				float dirX = dx * cosf(angleOffset) - dy * sinf(angleOffset);
+				float dirY = dx * sinf(angleOffset) + dy * cosf(angleOffset);
+				auto bullet = std::make_shared<BounceBulletAttack>(x, y, dirX, dirY, 3.5f, 3);
+				attacks.push_back(bullet);
+			}
+		}
+		else  // 普通圆形攻击
+		{
+			float r = 100.0f;
+			float dmg = 10.0f;
+			auto atk = std::make_shared<CircleAttack>(x, y, r, dmg);
+			attacks.push_back(atk);
+		}
+
+		attackPattern++;  // 切换攻击模式
 	}
 
 	virtual int getAttackDelay() override
 	{
-		return 180; // 帧数延迟（在 60 FPS 下约 3 秒）
+		return 180;  // 保持60FPS下约3秒的攻击间隔
 	}
 };
-
 
 //玩家类
 class Player
@@ -311,10 +440,12 @@ private:
 	float speed;
 	bool isAttacking;
 	int attackTimer;
+	bool damageCooldown;
+	int damageTimer;
 
 public:
 	Player()
-		:x(100), y(100), hp(100), maxHp(100), speed(4), isAttacking(false), attackTimer(0) {
+		:x(100), y(100), hp(100), maxHp(100), speed(4), isAttacking(false), attackTimer(0), damageCooldown(false), damageTimer(35) {
 	}
 
 	void update()
@@ -347,6 +478,18 @@ public:
 				isAttacking = false;
 			}
 		}
+
+		if (damageCooldown)
+		{
+			damageTimer--;
+			if (damageTimer <= 0)
+			{
+				damageCooldown = false;
+				damageTimer = 35;
+			}
+		}
+
+		
 	}
 
 	void draw()
@@ -381,11 +524,16 @@ public:
 
 	void takeDamage(float damage)
 	{
-		hp -= damage;
-		if (hp < 0)
+		if (!damageCooldown)
 		{
-			hp = 0;
+			hp -= damage;
+			damageCooldown = true;
+			if (hp < 0)
+			{
+				hp = 0;
+			}
 		}
+
 	}
 
 	float getHp() const
@@ -454,10 +602,12 @@ int main()
 		if (player.getHp() <= 0)
 		{
 			DrawText("You Died", SCREEN_WIDTH / 2 - 60, SCREEN_HEIGHT / 2 - 10, 20, RED);
+
 		}
 		else if (boss.getHp() <= 0)
 		{
 			DrawText("Boss Defeated!", SCREEN_WIDTH / 2 - 90, SCREEN_HEIGHT / 2 - 10, 20, GREEN);
+
 		}
 
 		EndDrawing();
@@ -467,4 +617,3 @@ int main()
 
 	return 0;
 }
-
