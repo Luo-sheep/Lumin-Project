@@ -308,26 +308,51 @@ class Player
 private:
 	float x, y;
 	float hp, maxHp;
-	float speed;
+	float speed; // 像素/秒
 	bool isAttacking;
 	int attackTimer;
 
 public:
 	Player()
-		:x(100), y(100), hp(100), maxHp(100), speed(4), isAttacking(false), attackTimer(0) {
+		:hp(100), maxHp(100), speed(220.0f), isAttacking(false), attackTimer(0)
+	{
+		// 初始位置：屏幕中下方
+		x = SCREEN_WIDTH / 2.0f;
+		y = SCREEN_HEIGHT - 100.0f;
 	}
 
 	void update()
 	{
-		//移动（使用 raylib 的按键接口）
-		if (IsKeyDown(KEY_W) && !isAttacking)
-			y -= speed;
-		if (IsKeyDown(KEY_S) && !isAttacking)
-			y += speed;
-		if (IsKeyDown(KEY_A) && !isAttacking)
-			x -= speed;
-		if (IsKeyDown(KEY_D) && !isAttacking)
-			x += speed;
+		// 使用帧时间使移动与帧率无关
+		float dt = GetFrameTime();
+
+		// 控制输入
+		float vx = 0.0f;
+		float vy = 0.0f;
+		if (IsKeyDown(KEY_W)) vy -= 1.0f;
+		if (IsKeyDown(KEY_S)) vy += 1.0f;
+		if (IsKeyDown(KEY_A)) vx -= 1.0f;
+		if (IsKeyDown(KEY_D)) vx += 1.0f;
+
+		// 若在攻击状态则禁止移动（保持原逻辑）
+		if (isAttacking)
+		{
+			vx = 0.0f;
+			vy = 0.0f;
+		}
+
+		// 归一化对角移动，避免对角速度变快
+		if (vx != 0.0f || vy != 0.0f)
+		{
+			float len = sqrtf(vx * vx + vy * vy);
+			if (len > 0.0f)
+			{
+				vx /= len;
+				vy /= len;
+			}
+			x += vx * speed * dt;
+			y += vy * speed * dt;
+		}
 
 		if (IsKeyPressed(KEY_SPACE) && !isAttacking)
 		{
@@ -335,9 +360,10 @@ public:
 			attackTimer = 20; // 攻击持续帧数
 		}
 
-		//边界检测（以中心点为准）
-		x = std::max((float)PLAYER_SIZE, std::min((float)SCREEN_WIDTH - PLAYER_SIZE, x));
-		y = std::max((float)PLAYER_SIZE, std::min((float)SCREEN_HEIGHT - PLAYER_SIZE, y));
+		//边界检测（以中心点为准，使用半径）
+		float half = PLAYER_SIZE / 2.0f;
+		x = std::max(half, std::min((float)SCREEN_WIDTH - half, x));
+		y = std::max(half, std::min((float)SCREEN_HEIGHT - half, y));
 
 		if (isAttacking)
 		{
@@ -410,8 +436,7 @@ int main()
 	Player player;
 	Boss01 boss(SCREEN_WIDTH / 2.0f, 120.0f);
 
-	// 把玩家放在屏幕中间偏下
-	player = Player();
+	// 把玩家放在屏幕中间偏下（Player构造已设置）
 	// 使用局部时间控制（本示例仍使用帧计数器）
 
 	while (!WindowShouldClose())
