@@ -19,11 +19,9 @@ const int SCREEN_HEIGHT = 600;
 const int PLAYER_SIZE = 20;
 const int BOSS_SIZE = 60;
 
-
-//定义攻击类型枚举
-enum AttackType
-{
-	CIRCLE_ATTACK
+enum GameState {
+	PLAYING,
+	GAME_OVER
 };
 
 //定义预警攻击阶段
@@ -102,7 +100,7 @@ private:
 
 public:
 	CircleAttack(float cx, float cy, float r, float dmg = 25.0f)
-		:Attack(cx, cy, r, dmg), warningTime(75), activeTime(30) {
+		:Attack(cx, cy, r, dmg), warningTime(75), activeTime(25) {
 	}
 
 	void update(float playerX, float playerY) override
@@ -519,11 +517,11 @@ private:
 	int attackPattern;
 	int aimedAttackCounter;  // 瞄准攻击计数器
 	bool isDoingAimedAttack; // 是否正在进行连续瞄准攻击
-	int chainAttackInterval; // 连续攻击的间隔（用于精确控制）
+	int chainAttackInterval; // 连续攻击的间隔
 
 public:
 	Boss01(float cx, float cy)
-		: Boss(cx, cy, 500.0f, "Boss01"), attackPattern(0),
+		: Boss(cx, cy, 250.0f, "Boss01"), attackPattern(0),
 		aimedAttackCounter(0), isDoingAimedAttack(false), chainAttackInterval(0)
 	{
 		attackDelay = getAttackDelay() / 2;
@@ -566,7 +564,7 @@ public:
 			}
 		}
 
-		// 处理攻击更新（从基类复制）
+		// 处理攻击更新
 		for (auto it = attacks.begin(); it != attacks.end();)
 		{
 			(*it)->update(playerX, playerY);
@@ -621,9 +619,9 @@ public:
 		float distance = getDistanceToPlayer(playerX, playerY);
 
 		// 远距离：使用瞄准攻击
-		if (distance > 150.0f)
+		if (distance > 100.0f)
 		{
-			if (attackPattern % 4 == 0)  // 每4次攻击使用1次反弹子弹
+			if (attackPattern % 3 == 0)  // 每3次攻击使用1次反弹子弹
 			{
 				// 反弹子弹逻辑保持不变...
 				float dx = playerX - x;
@@ -640,7 +638,7 @@ public:
 					float angleOffset = i * 0.2f;
 					float dirX = dx * cosf(angleOffset) - dy * sinf(angleOffset);
 					float dirY = dx * sinf(angleOffset) + dy * cosf(angleOffset);
-					auto bullet = std::make_shared<BounceBulletAttack>(x, y, dirX, dirY, 3.5f, 3);
+					auto bullet = std::make_shared<BounceBulletAttack>(x, y, dirX, dirY, 3.5f, 8);
 					attacks.push_back(bullet);
 				}
 			}
@@ -669,13 +667,13 @@ public:
 					float angleOffset = i * 0.2f;
 					float dirX = dx * cosf(angleOffset) - dy * sinf(angleOffset);
 					float dirY = dx * sinf(angleOffset) + dy * cosf(angleOffset);
-					auto bullet = std::make_shared<BounceBulletAttack>(x, y, dirX, dirY, 3.5f, 3);
+					auto bullet = std::make_shared<BounceBulletAttack>(x, y, dirX, dirY, 3.5f, 8);
 					attacks.push_back(bullet);
 				}
 			}
 			else
 			{
-				float r = 200.0f;
+				float r = 175.0f;
 				float dmg = 25.0f;
 				auto atk = std::make_shared<CircleAttack>(x, y, r, dmg);
 				attacks.push_back(atk);
@@ -794,7 +792,7 @@ public:
 		if (isAttacking)
 		{
 			const int segments = 20;  // 半圆的线段数量
-			const float radius = PLAYER_SIZE / 2 + 20;  // 攻击范围半径
+			const float radius = PLAYER_SIZE / 2 + 25;  // 攻击范围半径
 			const float startAngle = atan2f(attackDirY, attackDirX) - M_PI / 2;  // 半圆起始角度
 			const float endAngle = startAngle + M_PI;  // 半圆结束角度（180度）
 
@@ -895,6 +893,7 @@ int main()
 
 	Player player;
 	Boss01 boss(SCREEN_WIDTH / 2.0f, 120.0f);
+	GameState gameState = PLAYING;  // 初始化游戏状态为正在播放
 
 	// 把玩家放在屏幕中间偏下
 	player = Player();
@@ -902,24 +901,34 @@ int main()
 
 	while (!WindowShouldClose())
 	{
-		// 逻辑更新
-		player.update();
-		boss.update(player.getX(), player.getY(), player.getHp());
-
-		// Boss 的攻击命中检测：遍历每个攻击并应用伤害（若在 ACTIVE 且碰撞）
-		for (auto& atk : boss.getAttacks())
+		// 检查游戏是否应该结束
+		if (player.getHp() <= 0 || boss.getHp() <= 0)
 		{
-			if (atk->checkCollision(player.getX(), player.getY(), PLAYER_SIZE))
-			{
-				player.takeDamage(atk->getDamage());
-				// 暂不立即移除攻击，攻击生命周期由 Attack 管理
-			}
+			gameState = GAME_OVER;
 		}
 
-		// 玩家攻击命中 Boss
-		if (player.checkHit(boss.getX(), boss.getY(), BOSS_SIZE))
+		// 只有在游戏进行中才更新逻辑
+		if (gameState == PLAYING)
 		{
-			boss.takeDamage(15.0f);
+			// 逻辑更新
+			player.update();
+			boss.update(player.getX(), player.getY(), player.getHp());
+
+			// Boss 的攻击命中检测：遍历每个攻击并应用伤害（若在 ACTIVE 且碰撞）
+			for (auto& atk : boss.getAttacks())
+			{
+				if (atk->checkCollision(player.getX(), player.getY(), PLAYER_SIZE))
+				{
+					player.takeDamage(atk->getDamage());
+					// 暂不立即移除攻击，攻击生命周期由 Attack 管理
+				}
+			}
+
+			// 玩家攻击命中 Boss
+			if (player.checkHit(boss.getX(), boss.getY(), BOSS_SIZE))
+			{
+				boss.takeDamage(15.0f);
+			}
 		}
 
 		// 渲染
@@ -937,20 +946,23 @@ int main()
 		DrawText(TextFormat("%s HP: %d", boss.getName().c_str(), (int)boss.getHp()), 10, 50, 12, DARKGRAY);
 
 		// 若任一死亡，显示结束信息
-		if (player.getHp() <= 0)
+		if (gameState == GAME_OVER)
 		{
-			DrawText("You Died", SCREEN_WIDTH / 2 - 60, SCREEN_HEIGHT / 2 - 10, 20, RED);
-
-		}
-		else if (boss.getHp() <= 0)
-		{
-			DrawText("Boss Defeated!", SCREEN_WIDTH / 2 - 90, SCREEN_HEIGHT / 2 - 10, 20, GREEN);
-
+			if (player.getHp() <= 0)
+			{
+				DrawText("You Died", SCREEN_WIDTH / 2 - 60, SCREEN_HEIGHT / 2 - 10, 20, RED);
+			}
+			else if (boss.getHp() <= 0)
+			{
+				DrawText("Boss Defeated!", SCREEN_WIDTH / 2 - 90, SCREEN_HEIGHT / 2 - 10, 20, GREEN);
+			}
+			DrawText("Press ESC to exit", SCREEN_WIDTH / 2 - 80, SCREEN_HEIGHT / 2 + 30, 16, DARKGRAY);
 		}
 
 		EndDrawing();
 	}
 
+	
 	CloseWindow();
 
 	return 0;
