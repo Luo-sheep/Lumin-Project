@@ -1,4 +1,3 @@
-
 #define _CRT_SECURE_NO_WARNINGS
 #define _USE_MATH_DEFINES
 #include <cmath>
@@ -9,6 +8,7 @@
 #include <string>
 #include <memory>
 #include <filesystem>
+#include <cfloat> // 为 FLT_MAX
 
 #include "raylib.h"
 
@@ -20,6 +20,7 @@ const int BOSS_SIZE = 80;  // 增加到80以适应纹理
 const float BULLET_SIZE = 30.0f;  // 子弹大小
 
 enum GameState {
+    MAP,
     PLAYING,
     GAME_OVER,
     WIN
@@ -42,7 +43,7 @@ private:
     bool resourcesLoaded;
 
 public:
-    ResourceManager() : resourcesLoaded(false) {
+    ResourceManager() :resourcesLoaded(false) {
         bossTexture = { 0 };
         bulletTexture = { 0 };
         backgroundTexture = { 0 };
@@ -191,7 +192,7 @@ public:
         // WARNING: 显示黄色圆环（外圈）
         if (phase == WARNING)
         {
-            DrawCircleLines((int)x, (int)y, radius, BLACK);
+            DrawCircleLines((int)x, (int)y, radius, WHITE);
             DrawText("!", (int)x - 6, (int)y - 6, 20, YELLOW);
         }
         // ACTIVE: 红色填充圈
@@ -776,6 +777,7 @@ public:
     }
 };
 
+
 //玩家类 - 修改为使用纹理动画
 class Player
 {
@@ -799,13 +801,27 @@ private:
     float frameTimer;
     PlayerDirection direction;
 
+    // 朝向切换的短冷却（秒）
+    float facingChangeTimer;
+    // 记录上一次移动方向，用于停止后保持朝向
+    PlayerDirection lastFacing;
+    // 可选：每个方向的静止帧索引（默认 0），如果精灵表中静止帧不是第 0 帧，可修改此数组
+    int idleFrame[4];
+
 public:
     Player()
         :x(100), y(100), hp(220), maxHp(220), speed(5), isAttacking(false),
         attackTimer(0), damageCooldown(false), damageTimer(35),
         attackDirX(0), attackDirY(0), attackDisplaced(false),
         texture({ 0 }), frameRec({ 0, 0, PLAYER_SIZE, PLAYER_SIZE }),
-        isMoving(false), currentFrame(0), frameTimer(0.0f), direction(DIR_DOWN) {
+        isMoving(false), currentFrame(0), frameTimer(0.0f), direction(DIR_DOWN),
+        facingChangeTimer(0.0f), lastFacing(DIR_DOWN)
+    {
+        // 默认每行第0帧为站立帧
+        idleFrame[DIR_DOWN] = 0;
+        idleFrame[DIR_UP] = 0;
+        idleFrame[DIR_LEFT] = 0;
+        idleFrame[DIR_RIGHT] = 0;
     }
 
     bool LoadTexture(const char* path) {
@@ -815,38 +831,130 @@ public:
         return texture.id != 0;
     }
 
+    // 允许外部设置位置（地图 -> 战斗切换时使用）
+    void SetPosition(float nx, float ny) {
+        x = nx;
+        y = ny;
+    }
+
+    // 若需要调整某个方向的站立帧（可选）
+    void SetIdleFrame(PlayerDirection dir, int frameIndex) {
+        if (dir >= DIR_DOWN && dir <= DIR_RIGHT) idleFrame[dir] = frameIndex;
+    }
+
+    // 在地图界面按指定位置绘制玩家（复刻战斗界面动作效果）
+    void DrawOnMap(const Vector2& pos)
+    {
+        Color playerColor = damageCooldown ? RED : BLUE;
+
+        if (texture.id != 0)
+        {
+            Rectangle rec = frameRec;
+            if (rec.width <= 0 || rec.height <= 0) {
+                rec = { 0.0f, 0.0f, (float)texture.width, (float)texture.height };
+            }
+            Vector2 drawPos = { pos.x - rec.width / 2.0f, pos.y - rec.height / 2.0f };
+            DrawTextureRec(texture, rec, drawPos, playerColor);
+        }
+        else
+        {
+            DrawCircle((int)pos.x, (int)pos.y, PLAYER_SIZE / 2, playerColor);
+        }
+
+        if (isAttacking)
+        {
+            const int segments = 12;
+            const float radius = PLAYER_SIZE / 2 + 20;
+            const float startAngle = atan2f(attackDirY, attackDirX) - M_PI / 2;
+            const float endAngle = startAngle + M_PI;
+
+            for (int i = 0; i < segments; i++)
+            {
+                float a1 = startAngle + (endAngle - startAngle) * i / segments;
+                float a2 = startAngle + (endAngle - startAngle) * (i + 1) / segments;
+                Vector2 p1 = { pos.x + cosf(a1) * radius, pos.y + sinf(a1) * radius };
+                Vector2 p2 = { pos.x + cosf(a2) * radius, pos.y + sinf(a2) * radius };
+                DrawLineV(p1, p2, Fade(GREEN, 0.8f));
+            }
+        }
+    }
+
+    // 地图界面使用的朝向更新（不改变玩家战斗坐标）
+    void UpdateMapFacing(const Vector2& mapMovement)
+    {
+        const float FACING_COOLDOWN = 0.08f; // 80ms 冷却
+        float dt = GetFrameTime();
+        facingChangeTimer = std::max(0.0f, facingChangeTimer - dt);
+
+        if (mapMovement.x == 0.0f && mapMovement.y == 0.0f)
+        {
+            isMoving = false;
+            currentFrame = idleFrame[lastFacing]; // 使用 lastFacing 的静止帧
+            frameTimer = 0.0f;
+            direction = lastFacing;
+            if (texture.id != 0)
+            {
+                frameRec.x = (float)currentFrame * (float)PLAYER_SIZE;
+                frameRec.y = (float)direction * (float)PLAYER_SIZE;
+                frameRec.width = (float)PLAYER_SIZE;
+                frameRec.height = (float)PLAYER_SIZE;
+            }
+            return;
+        }
+
+        PlayerDirection newDir;
+        if (fabsf(mapMovement.x) >= fabsf(mapMovement.y))
+            newDir = (mapMovement.x > 0.0f) ? DIR_RIGHT : DIR_LEFT;
+        else
+            newDir = (mapMovement.y > 0.0f) ? DIR_DOWN : DIR_UP;
+
+        if (newDir != direction && facingChangeTimer <= 0.0f)
+        {
+            direction = newDir;
+            lastFacing = newDir;
+            currentFrame = 0;
+            frameTimer = 0.0f;
+            facingChangeTimer = FACING_COOLDOWN;
+        }
+
+        isMoving = true;
+        frameTimer += dt;
+        if (frameTimer >= 0.1f)
+        {
+            frameTimer = 0.0f;
+            currentFrame++;
+            // 假设每行 4 帧动画
+            if (currentFrame >= 4) currentFrame = 0;
+        }
+
+        if (texture.id != 0)
+        {
+            frameRec.x = (float)currentFrame * (float)PLAYER_SIZE;
+            frameRec.y = (float)direction * (float)PLAYER_SIZE;
+            frameRec.width = (float)PLAYER_SIZE;
+            frameRec.height = (float)PLAYER_SIZE;
+        }
+    }
+
     void update()
     {
         float deltaTime = GetFrameTime();
 
-        // 处理移动输入和动画
-        Vector2 movement = { 0, 0 };
-        isMoving = false;
+        const float FACING_COOLDOWN = 0.08f;
+        facingChangeTimer = std::max(0.0f, facingChangeTimer - deltaTime);
 
-        if (IsKeyDown(KEY_W))
-        {
-            movement.y -= 1;
-            direction = DIR_UP;
-            isMoving = true;
-        }
-        if (IsKeyDown(KEY_S))
-        {
-            movement.y += 1;
-            direction = DIR_DOWN;
-            isMoving = true;
-        }
-        if (IsKeyDown(KEY_A))
-        {
-            movement.x -= 1;
-            direction = DIR_LEFT;
-            isMoving = true;
-        }
-        if (IsKeyDown(KEY_D))
-        {
-            movement.x += 1;
-            direction = DIR_RIGHT;
-            isMoving = true;
-        }
+        // 读取移动输入向量
+        Vector2 movement = { 0, 0 };
+        if (IsKeyDown(KEY_W)) movement.y -= 1;
+        if (IsKeyDown(KEY_S)) movement.y += 1;
+        if (IsKeyDown(KEY_A)) movement.x -= 1;
+        if (IsKeyDown(KEY_D)) movement.x += 1;
+
+        // 记录刚按下的方向键作为 lastFacing（保证短促按键也生效）
+        if (IsKeyPressed(KEY_W)) lastFacing = DIR_UP;
+        else if (IsKeyPressed(KEY_S)) lastFacing = DIR_DOWN;
+        else if (IsKeyPressed(KEY_A)) lastFacing = DIR_LEFT;
+        else if (IsKeyPressed(KEY_D)) lastFacing = DIR_RIGHT;
 
         // 标准化对角线速度
         if (movement.x != 0 && movement.y != 0)
@@ -856,9 +964,38 @@ public:
             movement.y /= length;
         }
 
+        bool willMove = (movement.x != 0.0f || movement.y != 0.0f);
+        if (willMove)
+        {
+            PlayerDirection newDir;
+            if (fabsf(movement.x) >= fabsf(movement.y))
+                newDir = (movement.x > 0.0f) ? DIR_RIGHT : DIR_LEFT;
+            else
+                newDir = (movement.y > 0.0f) ? DIR_DOWN : DIR_UP;
+
+            if (newDir != direction && facingChangeTimer <= 0.0f)
+            {
+                direction = newDir;
+                lastFacing = newDir;
+                currentFrame = 0;
+                frameTimer = 0.0f;
+                facingChangeTimer = FACING_COOLDOWN;
+            }
+
+            isMoving = true;
+        }
+        else
+        {
+            // 停止移动后保持朝向为 lastFacing，使用对应静止帧
+               isMoving = false;
+            direction = lastFacing;
+            currentFrame = idleFrame[lastFacing];
+            frameTimer = 0.0f;
+        }
+
+        // 攻击方向计算
         Vector2 attackDirection = { 0, 0 };
-        if (movement.x == 0 && movement.y == 0) {
-            // 没有移动输入时，使用当前面向的方向
+        if (!willMove) {
             switch (direction) {
             case DIR_UP: attackDirection = { 0, -1 }; break;
             case DIR_DOWN: attackDirection = { 0, 1 }; break;
@@ -867,42 +1004,28 @@ public:
             }
         }
         else {
-            // 标准化移动向量
             float len = sqrtf(movement.x * movement.x + movement.y * movement.y);
-            if (len > 0) {
-                attackDirection.x = movement.x / len;
-                attackDirection.y = movement.y / len;
-            }
+            if (len > 0) { attackDirection.x = movement.x / len; attackDirection.y = movement.y / len; }
         }
 
-        // 攻击逻辑
+        // 攻击触发
         if (IsKeyPressed(KEY_SPACE) && !isAttacking)
         {
             isAttacking = true;
             attackTimer = 15;
-            attackDirX = attackDirection.x;  
+            attackDirX = attackDirection.x;
             attackDirY = attackDirection.y;
             attackDisplaced = false;
         }
 
-        // 攻击过程处理
+        // 攻击位移或常规移动
         if (isAttacking)
         {
-            // 攻击开始时执行一次位移
-            if (!attackDisplaced) {
-                x += attackDirX * 15;
-                y += attackDirY * 15;
-                attackDisplaced = true;
-            }
-
+            if (!attackDisplaced) { x += attackDirX * 15; y += attackDirY * 15; attackDisplaced = true; }
             attackTimer--;
-            if (attackTimer <= 0)
-            {
-                isAttacking = false;
-            }
+            if (attackTimer <= 0) isAttacking = false;
         }
-        // 非攻击状态下的移动
-        else if(isMoving)
+        else if (isMoving)
         {
             x += movement.x * speed;
             y += movement.y * speed;
@@ -913,42 +1036,35 @@ public:
         x = std::max(playerRadius, std::min((float)SCREEN_WIDTH - playerRadius, x));
         y = std::max(playerRadius, std::min((float)SCREEN_HEIGHT - playerRadius, y));
 
-        // 更新动画帧
+        // 推进行走动画帧（只有在移动且有纹理时推进）
         if (isMoving && texture.id != 0)
         {
             frameTimer += deltaTime;
-
-            // 每0.1秒切换一帧
             if (frameTimer >= 0.1f)
             {
                 frameTimer = 0.0f;
                 currentFrame++;
-                if (currentFrame >= 4)  // 假设有4帧动画
-                    currentFrame = 0;
+                if (currentFrame >= 4) currentFrame = 0;
             }
         }
         else
         {
-            // 静止时使用第一帧
-            currentFrame = 0;
+            // 保证静止时使用 idleFrame
+            currentFrame = idleFrame[direction];
             frameTimer = 0.0f;
         }
 
-        // 更新帧矩形（假设纹理是4列x4行的精灵图）
         if (texture.id != 0) {
-            int textureFramesPerRow = texture.width / PLAYER_SIZE;
-            frameRec.x = (float)direction * PLAYER_SIZE;
-            frameRec.y = (float)currentFrame * PLAYER_SIZE;
+            frameRec.x = (float)currentFrame * (float)PLAYER_SIZE;
+            frameRec.y = (float)direction * (float)PLAYER_SIZE;
+            frameRec.width = (float)PLAYER_SIZE;
+            frameRec.height = (float)PLAYER_SIZE;
         }
 
         if (damageCooldown)
         {
             damageTimer--;
-            if (damageTimer <= 0)
-            {
-                damageCooldown = false;
-                damageTimer = 35;
-            }
+            if (damageTimer <= 0) { damageCooldown = false; damageTimer = 35; }
         }
     }
 
@@ -956,7 +1072,6 @@ public:
     {
         Color playerColor = damageCooldown ? RED : BLUE;
 
-        // 绘制玩家纹理
         if (texture.id != 0) {
             DrawTextureRec(texture, frameRec, { x - PLAYER_SIZE / 2, y - PLAYER_SIZE / 2 }, playerColor);
         }
@@ -964,40 +1079,26 @@ public:
             DrawCircle((int)x, (int)y, PLAYER_SIZE / 2, playerColor);
         }
 
-        // 绘制半圆形攻击范围
+        // 攻击半圆绘制（保持不变）
         if (isAttacking)
         {
-            const int segments = 20; // 半圆的线段数量
-            const float radius = PLAYER_SIZE / 2 + 25;  // 攻击范围半径
-            const float startAngle = atan2f(attackDirY, attackDirX) - M_PI / 2;  // 半圆起始角度
-            const float endAngle = startAngle + M_PI;  // 半圆结束角度（180度）
+            const int segments = 20;
+            const float radius = PLAYER_SIZE / 2 + 25;
+            const float startAngle = atan2f(attackDirY, attackDirX) - M_PI / 2;
+            const float endAngle = startAngle + M_PI;
 
-            // 绘制半圆弧线
             for (int i = 0; i < segments; i++)
             {
                 float angle1 = startAngle + (endAngle - startAngle) * i / segments;
                 float angle2 = startAngle + (endAngle - startAngle) * (i + 1) / segments;
 
-                Vector2 p1 = {
-                    x + cosf(angle1) * radius,
-                    y + sinf(angle1) * radius
-                };
-                Vector2 p2 = {
-                    x + cosf(angle2) * radius,
-                    y + sinf(angle2) * radius
-                };
+                Vector2 p1 = { x + cosf(angle1) * radius, y + sinf(angle1) * radius };
+                Vector2 p2 = { x + cosf(angle2) * radius, y + sinf(angle2) * radius };
                 DrawLineV(p1, p2, GREEN);
             }
 
-            // 绘制连接玩家到半圆两端的线段
-            Vector2 end1 = {
-                x + cosf(startAngle) * radius,
-                y + sinf(startAngle) * radius
-            };
-            Vector2 end2 = {
-                x + cosf(endAngle) * radius,
-                y + sinf(endAngle) * radius
-            };
+            Vector2 end1 = { x + cosf(startAngle) * radius, y + sinf(startAngle) * radius };
+            Vector2 end2 = { x + cosf(endAngle) * radius, y + sinf(endAngle) * radius };
             DrawLineV({ x, y }, end1, GREEN);
             DrawLineV({ x, y }, end2, GREEN);
         }
@@ -1013,22 +1114,18 @@ public:
     {
         if (!isAttacking) return false;
 
-        // 计算Boss相对于玩家的位置
         float dx = bossX - x;
         float dy = bossY - y;
         float dist = sqrtf(dx * dx + dy * dy);
         float bossRadius = bossSize / 2;
         float attackRadius = PLAYER_SIZE / 2 + 20;
 
-        // 距离检测
         if (dist > attackRadius + bossRadius) return false;
 
-        // 角度检测（是否在半圆形攻击范围内）
         float bossAngle = atan2f(dy, dx);
         float attackStartAngle = atan2f(attackDirY, attackDirX) - M_PI / 2;
         float attackEndAngle = attackStartAngle + M_PI;
 
-        // 处理角度环绕问题
         if (attackStartAngle < 0) attackStartAngle += 2 * M_PI;
         if (attackEndAngle < 0) attackEndAngle += 2 * M_PI;
         if (bossAngle < 0) bossAngle += 2 * M_PI;
@@ -1046,7 +1143,6 @@ public:
         return inAngleRange;
     }
 
-    // 其他原有方法保持不变...
     void takeDamage(float damage)
     {
         if (!damageCooldown)
@@ -1072,93 +1168,198 @@ int main()
         TraceLog(LOG_INFO, "部分资源加载失败，将使用默认图形");
     }
 
+    // 地图场景资源（来自你提供的地图程序）
+    Texture2D mapMain = LoadTexture("../main_map.png");
+    Texture2D map1 = LoadTexture("../map1Plus.png");
+    Texture2D mapPlayerTex = LoadTexture("../向前.png"); // 地图上角色贴图（独立于战斗用的walk.png）
+
+    // 地图控制变量
+    int currentMap = 0;
+    Texture2D currentBg = mapMain;
+    Rectangle portal1 = { 600, 300, 60, 60 };
+    Rectangle portal2 = { 100, 100, 60, 60 };
+    Vector2 mapPos = { 250, 250 };
+    bool canTeleport = true;
+
     Player player;
     Boss01 boss(SCREEN_WIDTH / 2.0f, 120.0f);
-    GameState gameState = PLAYING;  // 初始化游戏状态为正在播放
+    GameState gameState = MAP;  // 初始为地图场景
 
-    // 加载玩家纹理
-    player.LoadTexture("../walk.png");
-
-    // 把玩家放在屏幕中间偏下
-    player = Player();
-    // 使用局部时间控制（本示例仍使用帧计数器）
+    // 加载玩家纹理（战斗用）
     player.LoadTexture("../walk.png");
 
     while (!WindowShouldClose())
     {
-        // 检查游戏是否应该结束
-        if (player.getHp() <= 0)
+        // 如果处于地图场景，首先处理地图输入与传送逻辑
+        if (gameState == MAP)
         {
-            gameState = GAME_OVER;
-        }
-        else if (boss.getHp() <= 0)
-        {
-            gameState = WIN;
-        }
-
-        // 只有在游戏进行中才更新逻辑
-        if (gameState == PLAYING)
-        {
-            // 逻辑更新
-            player.update();
-            boss.update(player.getX(), player.getY(), player.getHp());
-
-            // Boss 的攻击命中检测：遍历每个攻击并应用伤害（若在 ACTIVE 且碰撞）
-            for (auto& atk : boss.getAttacks())
-            {
-                if (atk->checkCollision(player.getX(), player.getY(), PLAYER_SIZE))
-                {
-                    player.takeDamage(atk->getDamage());
-                    // 暂不立即移除攻击，攻击生命周期由 Attack 管理
-                }
+            // 地图移动输入（与原示例一致）
+            if (IsKeyDown(KEY_W) || IsKeyDown(KEY_UP)) {
+                mapPos.y -= 2;
+            }
+            else if (IsKeyDown(KEY_S) || IsKeyDown(KEY_DOWN)) {
+                mapPos.y += 2;
+            }
+            if (IsKeyDown(KEY_A) || IsKeyDown(KEY_LEFT)) {
+                mapPos.x -= 2;
+            }
+            else if (IsKeyDown(KEY_D) || IsKeyDown(KEY_RIGHT)) {
+                mapPos.x += 2;
             }
 
-            // 玩家攻击命中 Boss
-            if (player.checkHit(boss.getX(), boss.getY(), BOSS_SIZE))
+            // 地图切换逻辑（传送至战斗场景）
+            if (currentMap == 0)
             {
-                boss.takeDamage(15.0f);
+                if (CheckCollisionPointRec(mapPos, portal1))
+                {
+                    if (canTeleport) {
+                        // 切换到地图1（或在这里直接进入战斗，根据你的需求）
+                        // 这里我们直接进入战斗场景（跳回战斗界面）
+                        gameState = PLAYING;
+                        // 把玩家放到战斗场景合适的位置
+                        player.SetPosition(SCREEN_WIDTH / 2.0f, SCREEN_HEIGHT - 120.0f);
+                        // 初始化或重置 Boss（如果需要可重置血量）
+                        boss = Boss01(SCREEN_WIDTH / 2.0f, 120.0f);
+                        canTeleport = false;
+                    }
+                }
+                else {
+                    canTeleport = true; // 玩家离开传送门后，才能再次传送
+                }
+            }
+            else if (currentMap == 1)
+            {
+                if (CheckCollisionPointRec(mapPos, portal2))
+                {
+                    if (canTeleport) {
+                        gameState = PLAYING;
+                        player.SetPosition(SCREEN_WIDTH / 2.0f, SCREEN_HEIGHT - 120.0f);
+                        boss = Boss01(SCREEN_WIDTH / 2.0f, 120.0f);
+                        canTeleport = false;
+                    }
+                }
+                else {
+                    canTeleport = true;
+                }
+            }
+        }
+        else
+        {
+            // 战斗场景及游戏结束判断
+            if (player.getHp() <= 0)
+            {
+                gameState = GAME_OVER;
+            }
+            else if (boss.getHp() <= 0)
+            {
+                gameState = WIN;
+            }
+
+            // 只有在游戏进行中才更新逻辑
+            if (gameState == PLAYING)
+            {
+                // 逻辑更新
+                player.update();
+                boss.update(player.getX(), player.getY(), player.getHp());
+
+                // Boss 的攻击命中检测：遍历每个攻击并应用伤害（若在 ACTIVE 且碰撞）
+                for (auto& atk : boss.getAttacks())
+                {
+                    if (atk->checkCollision(player.getX(), player.getY(), PLAYER_SIZE))
+                    {
+                        player.takeDamage(atk->getDamage());
+                        // 暂不立即移除攻击，攻击生命周期由 Attack 管理
+                    }
+                }
+
+                // 玩家攻击命中 Boss
+                if (player.checkHit(boss.getX(), boss.getY(), BOSS_SIZE))
+                {
+                    boss.takeDamage(15.0f);
+                }
             }
         }
 
         // 渲染
         BeginDrawing();
 
-        // 绘制背景
-        Texture2D bgTex = resourceManager.GetBackgroundTexture();
-        if (bgTex.id != 0) {
-            // 平铺背景
-            for (int y = 0; y < SCREEN_HEIGHT; y += bgTex.height) {
-                for (int x = 0; x < SCREEN_WIDTH; x += bgTex.width) {
-                    DrawTexture(bgTex, x, y, Fade(WHITE, 0.8f));
+        // MAP 场景绘制
+        if (gameState == MAP)
+        {
+            ClearBackground(WHITE);
+            // 绘制当前地图背景
+            if (currentBg.id != 0) {
+                // 若贴图大小大于或等于窗口，缩放填满窗口以完整显示地图
+                Rectangle src = { 0.0f, 0.0f, (float)currentBg.width, (float)currentBg.height };
+                Rectangle dst = { 0.0f, 0.0f, (float)SCREEN_WIDTH, (float)SCREEN_HEIGHT };
+                Vector2 origin = { 0.0f, 0.0f };
+                DrawTexturePro(currentBg, src, dst, origin, 0.0f, WHITE);
+            } else {
+                // 纹理未加载时使用备用背景色
+                ClearBackground(RAYWHITE);
+            }
+
+            // 绘制传送门
+            if (currentMap == 0)
+                DrawRectangleRec(portal1, Fade(RED, 0.4f));
+            else
+                DrawRectangleRec(portal2, Fade(BLUE, 0.4f));
+
+            // 绘制地图玩家：改为使用玩家战斗纹理的显示（复刻战斗界面动作）
+            player.DrawOnMap(mapPos);
+
+            DrawFPS(0, 0);
+        }
+        else
+        {
+            // 战斗场景渲染（保持原有逻辑）
+            Texture2D bgTex = resourceManager.GetBackgroundTexture();
+            if (bgTex.id != 0) {
+                for (int y = 0; y < SCREEN_HEIGHT; y += bgTex.height) {
+                    for (int x = 0; x < SCREEN_WIDTH; x += bgTex.width) {
+                        DrawTexture(bgTex, x, y, Fade(WHITE, 0.8f));
+                    }
                 }
             }
-        }
-        else {
-            ClearBackground({ 30, 30, 30, 255 });
-        }
-
-        // 绘制游戏对象
-        boss.draw();
-        boss.drawAttacks();
-        player.draw();
-
-        // HUD
-        DrawText(TextFormat("FPS: %d", GetFPS()), 10, 10, 12, DARKGRAY);
-        DrawText(TextFormat("Player HP: %d", (int)player.getHp()), 10, 30, 12, DARKGRAY);
-        DrawText(TextFormat("%s HP: %d", boss.getName().c_str(), (int)boss.getHp()), 10, 50, 12, DARKGRAY);
-
-        // 若任一死亡，显示结束信息
-        if (gameState == GAME_OVER)
-        {
-            if (player.getHp() <= 0)
-            {
-                DrawText("You Died", SCREEN_WIDTH / 2 - 60, SCREEN_HEIGHT / 2 - 10, 20, RED);
+            else {
+                ClearBackground({ 30, 30, 30, 255 });
             }
-            else if (boss.getHp() <= 0)
+
+            // 绘制游戏对象
+            boss.draw();
+            boss.drawAttacks();
+            player.draw();
+
+            // HUD
+            DrawText(TextFormat("FPS: %d", GetFPS()), 10, 10, 12, DARKGRAY);
+            DrawText(TextFormat("Player HP: %d", (int)player.getHp()), 10, 30, 12, DARKGRAY);
+            DrawText(TextFormat("%s HP: %d", boss.getName().c_str(), (int)boss.getHp()), 10, 50, 12, DARKGRAY);
+
+            // 若任一死亡，显示结束信息
+            if (gameState == GAME_OVER)
             {
-                DrawText("Boss Defeated!", SCREEN_WIDTH / 2 - 90, SCREEN_HEIGHT / 2 - 10, 20, GREEN);
+                if (player.getHp() <= 0)
+                {
+                    DrawText("You Died", SCREEN_WIDTH / 2 - 60, SCREEN_HEIGHT / 2 - 10, 20, RED);
+                }
+                else if (boss.getHp() <= 0)
+                {
+                    DrawText("Boss Defeated!", SCREEN_WIDTH / 2 - 90, SCREEN_HEIGHT / 2 - 10, 20, GREEN);
+                }
+                DrawText("Press ESC to exit", SCREEN_WIDTH / 2 - 80, SCREEN_HEIGHT / 2 + 30, 16, DARKGRAY);
             }
-            DrawText("Press ESC to exit", SCREEN_WIDTH / 2 - 80, SCREEN_HEIGHT / 2 + 30, 16, DARKGRAY);
+            else if (gameState == WIN)
+            {
+                DrawText("Victory!", SCREEN_WIDTH / 2 - 60, SCREEN_HEIGHT / 2 - 10, 20, GREEN);
+                DrawText("Press ESC to exit or M to return to map", SCREEN_WIDTH / 2 - 160, SCREEN_HEIGHT / 2 + 30, 14, DARKGRAY);
+                if (IsKeyPressed(KEY_M)) {
+                    // 按 M 返回地图（如果你希望战斗后回到地图）
+                    gameState = MAP;
+                    currentMap = 0;
+                    currentBg = mapMain;
+                    mapPos = { 500, 400 };
+                }
+            }
         }
 
         EndDrawing();
@@ -1166,6 +1367,9 @@ int main()
 
     // 清理资源
     resourceManager.UnloadResources();
+    UnloadTexture(mapMain);
+    UnloadTexture(map1);
+    UnloadTexture(mapPlayerTex);
     CloseWindow();
 
     return 0;

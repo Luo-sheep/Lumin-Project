@@ -89,7 +89,13 @@ bool button(Rectangle rect, const char* text) {
     return click;
 }
 
+// 方法 A: 使用宏控制是否编译 main
+#ifdef BUILD_LOGIN_MAIN
 int main(void) {
+#else
+// 将原 main 改名为库函数，供其它模块调用（如果需要）
+int login_main(void) {
+#endif
     InitWindow(800, 600, "Login System");
     SetTargetFPS(60);
 

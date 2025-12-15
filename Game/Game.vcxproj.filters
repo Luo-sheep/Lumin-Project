@@ -21,6 +21,9 @@
     <ClInclude Include="sqlite3.h">
       <Filter>include</Filter>
     </ClInclude>
+    <ClInclude Include="resource.h">
+      <Filter>include</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="fight.cpp">
@@ -29,7 +32,7 @@
     <ClCompile Include="login.c">
       <Filter>源文件</Filter>
     </ClCompile>
-    <ClCompile Include="..\..\sqlite-amalgamation-3510100\sqlite3.c">
+    <ClCompile Include="sqlite3.c">
       <Filter>源文件</Filter>
     </ClCompile>
   </ItemGroup>
@@ -46,10 +49,30 @@
     <Image Include="..\bullet.png">
       <Filter>Resources</Filter>
     </Image>
+    <Image Include="..\main_map.png">
+      <Filter>Resources</Filter>
+    </Image>
+    <Image Include="..\map1Plus.png">
+      <Filter>Resources</Filter>
+    </Image>
+    <Image Include="..\地图1.png">
+      <Filter>Resources</Filter>
+    </Image>
+    <Image Include="..\地图1x2.png">
+      <Filter>Resources</Filter>
+    </Image>
+    <Image Include="..\向前.png">
+      <Filter>Resources</Filter>
+    </Image>
   </ItemGroup>
   <ItemGroup>
     <None Include="..\..\msyh.ttc">
       <Filter>Resources</Filter>
     </None>
+  </ItemGroup>
+  <ItemGroup>
+    <ResourceCompile Include="Game.rc">
+      <Filter>Resources</Filter>
+    </ResourceCompile>
   </ItemGroup>
 </Project>

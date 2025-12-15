@@ -71,8 +71,12 @@
   </ImportGroup>
   <PropertyGroup Label="UserMacros" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
-    <IncludePath>C:\Program Files\MySQL\MySQL Connector C 6.1\include;D:\raylib\include;$(VC_IncludePath);$(WindowsSDK_IncludePath);</IncludePath>
-    <LibraryPath>C:\Program Files\MySQL\MySQL Connector C 6.1\lib;D:\raylib\lib;$(VC_LibraryPath_x64);$(WindowsSDK_LibraryPath_x64)</LibraryPath>
+    <IncludePath>E:\book\Game_pro\Game\raylib\include;C:\Program Files\MySQL\MySQL Connector C 6.1\include;D:\raylib\include;$(VC_IncludePath);$(WindowsSDK_IncludePath);</IncludePath>
+    <LibraryPath>E:\book\Game_pro\Game\raylib\lib;C:\Program Files\MySQL\MySQL Connector C 6.1\lib;D:\raylib\lib;$(VC_LibraryPath_x64);$(WindowsSDK_LibraryPath_x64)</LibraryPath>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <IncludePath>E:\book\Game_pro\Game\raylib\include;$(VC_IncludePath);$(WindowsSDK_IncludePath);</IncludePath>
+    <LibraryPath>E:\book\Game_pro\Game\raylib\lib;$(VC_LibraryPath_x64);$(WindowsSDK_LibraryPath_x64)</LibraryPath>
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <ClCompile>
@@ -111,7 +115,7 @@
     <Link>
       <SubSystem>Console</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalDependencies>libmysql.lib;libraylibdll.a;$(CoreLibraryDependencies);%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>raylib.lib;raylibdll.lib;winmm.lib;user32.lib;gdi32.lib;opengl32.lib;ole32.lib;comdlg32.lib;imm32.lib;ws2_32.lib;shell32.lib;version.lib;kernel32.lib</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
@@ -126,25 +130,35 @@
     <Link>
       <SubSystem>Console</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
+      <AdditionalDependencies>raylib.lib;raylibdll.lib;winmm.lib;user32.lib;gdi32.lib;opengl32.lib;ole32.lib;comdlg32.lib;imm32.lib;ws2_32.lib;shell32.lib;version.lib;kernel32.lib</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClInclude Include="player.h" />
+    <ClInclude Include="resource.h" />
     <ClInclude Include="sqlite3.h" />
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="..\..\sqlite-amalgamation-3510100\sqlite3.c" />
     <ClCompile Include="fight.cpp" />
     <ClCompile Include="login.c" />
+    <ClCompile Include="sqlite3.c" />
   </ItemGroup>
   <ItemGroup>
     <Image Include="..\background.png" />
     <Image Include="..\bullet.png" />
     <Image Include="..\enemy.png" />
+    <Image Include="..\main_map.png" />
+    <Image Include="..\map1Plus.png" />
     <Image Include="..\walk.png" />
+    <Image Include="..\向前.png" />
+    <Image Include="..\地图1.png" />
+    <Image Include="..\地图1x2.png" />
   </ItemGroup>
   <ItemGroup>
     <None Include="..\..\msyh.ttc" />
+  </ItemGroup>
+  <ItemGroup>
+    <ResourceCompile Include="Game.rc" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
