@@ -778,7 +778,7 @@ public:
 };
 
 
-//玩家类 - 修改为使用纹理动画
+//玩家类 - 使用纹理动画
 class Player
 {
 private:
